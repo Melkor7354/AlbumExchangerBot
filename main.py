@@ -2,10 +2,21 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import aiosqlite as sql
+import datetime
+import time
 
 token = 'MTIyMjU0NDYzODU2NTY3OTE1NA.GORpSM.-lRqnDgpl3lukuNkivKB-1Mn_AV-LY2LhB6hgc'
 
 bot = commands.Bot(command_prefix='<>', intents=discord.Intents.all())
+
+def shuffle(members):
+    pass
+
+
+def unix_time(date: datetime.datetime, days: int, hours: int = 0, minutes: int = 0, seconds: int = 0) -> str:
+    end_date = date + datetime.timedelta(days=days, hours=hours, minutes=minutes, seconds=seconds)
+    date_tuple = (end_date.year, end_date.month, end_date.day, end_date.hour, end_date.minute, end_date.second)
+    return f'<t:{int(time.mktime(datetime.datetime(*date_tuple).timetuple()))}:R>'
 
 
 @bot.event
@@ -68,9 +79,13 @@ async def initiate(interaction: discord.Interaction, title: str, submission_peri
 
         channel = bot.get_channel(1222594360630050857)
         try:
-            await channel.send(f"The exchange has begun! You can start submitting your entries now! {roles.mention}")
+            await channel.send(f'''The exchange has begun! You can start submitting your entries now! \n 
+            The submission deadline is {unix_time(date=datetime.datetime.now(), days=submission_period)}\n
+            {roles.mention}.''')
         except Exception:
-            await channel.send("The exchange has begun! You can start submitting your entries now! <@&1222628620158369823>")
+            await channel.send(f'''The exchange has begun! You can start submitting your entries now! 
+The submission deadline is {unix_time(date=datetime.datetime.now(), days=submission_period)}
+<@&1222628620158369823>''')
         await interaction.response.send_message("Exchange has been initiated successfully!", ephemeral=True)
     else:
         await interaction.response.send_message("Fuck off imposter!")
@@ -108,8 +123,8 @@ async def enter(interaction: discord.Interaction, artist: str, album: str, genre
                     "Please wait for an Exchange to be initiated by the moderators.", ephemeral=True)
 
 
-@bot.tree.command(name='start_exchange', description='Use this to begin the exchange and assign albums.')
-@app_commands.describe(password="Enter Password Here")
+#@bot.tree.command(name='start_exchange', description='Use this to begin the exchange and assign albums.')
+#@app_commands.describe(password="Enter Password Here")
 
 
 @bot.tree.command(name='end_exchange', description='Ends the ongoing exchange.')
