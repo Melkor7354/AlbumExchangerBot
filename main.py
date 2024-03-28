@@ -31,8 +31,12 @@ async def on_ready():
 @app_commands.describe(title='Enter Title of Exchange',
                        submission_period='How long is the submission period (in days)?',
                        exchange_period="How long is the exchange period (in days)?",
-                       password="Enter passkey here")
-async def initiate(interaction: discord.Interaction, title: str, submission_period: int, exchange_period: int, password: str):
+                       message="Give a Custom Message.",
+                       theme="Give a Theme for the exchange.",
+                       password="Enter passkey here",
+                       roles="Roles to Tag")
+async def initiate(interaction: discord.Interaction, title: str, submission_period: int, exchange_period: int,
+                   password: str, message: str = None, theme: str = None, roles: discord.Role = None):
     async with sql.connect('main.db') as db:
         async with db.cursor() as cur:
             await cur.execute("SELECT * FROM Ongoing;")
@@ -45,19 +49,28 @@ async def initiate(interaction: discord.Interaction, title: str, submission_peri
             async with db.cursor() as cur:
                 await cur.execute("SELECT * FROM Ongoing;")
                 ongoing = await cur.fetchall()
-                if len(ongoing) != 0:
-                    await cur.execute(f'''UPDATE Ongoing SET Current_Exchange=1, Title='{title}' where Current_Exchange=0;''')
+                try:
+                    if len(ongoing) != 0:
+                        await cur.execute(f'''UPDATE Ongoing SET Current_exchange=1, Title='{title}' where Current_exchange=0;''')
+                    else:
+                        await cur.execute(f'''INSERT INTO Ongoing VALUES(1, "{title}");''')
+                    await cur.execute(f'''CREATE TABLE {title}(Member varchar(100) not null, 
+                                                        Artist varchar(100) not null, 
+                                                        Album varchar(100) not null, 
+                                                        Genre varchar(100) not null, 
+                                                        Year int not null, 
+                                                        Country varchar(100) not null, rating varchar(100) not null);''')
                     await db.commit()
-                else:
-                    await cur.execute(f'''INSERT INTO Ongoing VALUES(1, "{title}");''')
-                    await db.commit()
-                await cur.execute(f'''CREATE TABLE {title}(Member varchar(100) not null, 
-                                    Artist varchar(100) not null, 
-                                    Album varchar(100) not null, 
-                                    Genre varchar(100) not null, 
-                                    Year int not null, 
-                                    Country varchar(100) not null, rating varchar(100) not null);''')
-                await db.commit()
+                except Exception:
+                    await interaction.response.send_message("Exchange with that title already exists. Please try again",
+                                                            ephemeral=True)
+                    return
+
+        channel = bot.get_channel(1222594360630050857)
+        try:
+            await channel.send(f"The exchange has begun! You can start submitting your entries now! {roles.mention}")
+        except Exception:
+            await channel.send("The exchange has begun! You can start submitting your entries now! <@&1222628620158369823>")
         await interaction.response.send_message("Exchange has been initiated successfully!", ephemeral=True)
     else:
         await interaction.response.send_message("Fuck off imposter!")
@@ -75,11 +88,11 @@ async def enter(interaction: discord.Interaction, artist: str, album: str, genre
             await db.commit()
             print(ongoing[0][0])
             if ongoing[0][0] == 1:
-                await cur.execute(f'''SELECT * FROM {ongoing[0][1]} where Member='{interaction.user}';''')
+                await cur.execute(f'''SELECT * FROM {ongoing[0][1]} where Member='{interaction.user.id}';''')
                 a = await cur.fetchall()
                 if len(a) == 0:
-                    await cur.execute(f'''INSERT INTO {ongoing[0][1]} VALUES("{interaction.user}", "{artist}", "{album}", "{genre}", {year}, 
-                                                "{country}", "{rating}");''')
+                    await cur.execute(f'''INSERT INTO {ongoing[0][1]} VALUES("{interaction.user.id}", "{artist}", "{album}",
+                     "{genre}", {year}, "{country}", "{rating}");''')
                     await db.commit()
 
                     await interaction.response.send_message(
@@ -93,5 +106,34 @@ async def enter(interaction: discord.Interaction, artist: str, album: str, genre
             else:
                 await interaction.response.send_message(
                     "Please wait for an Exchange to be initiated by the moderators.", ephemeral=True)
+
+
+@bot.tree.command(name='start_exchange', description='Use this to begin the exchange and assign albums.')
+@app_commands.describe(password="Enter Password Here")
+
+
+@bot.tree.command(name='end_exchange', description='Ends the ongoing exchange.')
+@app_commands.describe(password='Enter password here.', roles="Enter role to ping.")
+async def end(interaction: discord.Interaction, password: str, roles: discord.Role):
+    async with sql.connect('main.db') as db:
+        async with db.cursor() as cur:
+            await cur.execute("SELECT * FROM Ongoing;")
+            ongoing = await cur.fetchall()
+            if password == "never_share_this":
+                if ongoing[0][0] == 1:
+                    await cur.execute('UPDATE Ongoing SET Current_exchange=0, Title="NONE" where Current_exchange=1;')
+                    await db.commit()
+                    await interaction.response.send_message("Exchange ended successfully!", ephemeral=True)
+                    channel = bot.get_channel(1222594360630050857)
+                    try:
+                        await channel.send(f"The exchange has ended! {roles.mention}")
+                    except Exception:
+                        await channel.send("The exchange has ended! <@&1222628620158369823>")
+
+                else:
+                    await interaction.response.send_message("No Exchange ongoing.", ephemeral=True)
+            else:
+                await interaction.response.send_message('Fuck off imposter', ephemeral=True)
+
 
 bot.run(token)
