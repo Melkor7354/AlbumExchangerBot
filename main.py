@@ -1,15 +1,24 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 import aiosqlite as sql
 import datetime
 import time
 
 token = 'MTIyMjU0NDYzODU2NTY3OTE1NA.GORpSM.-lRqnDgpl3lukuNkivKB-1Mn_AV-LY2LhB6hgc'
-
+passkey = "hello"
+utc = datetime.timezone.utc
 bot = commands.Bot(command_prefix='<>', intents=discord.Intents.all())
+print(datetime.datetime.utcnow())
+daily_announcement_time = datetime.time(hour=12, tzinfo=utc)
+
 
 def shuffle(members):
+    pass
+
+
+@tasks.loop(time=daily_announcement_time)  # scheduling task runs daily
+async def daily_reminder():
     pass
 
 
@@ -55,7 +64,7 @@ async def initiate(interaction: discord.Interaction, title: str, submission_peri
         await db.commit()
     if ongoing[0][0] == 1:
         await interaction.response.send_message("An Exchange in already in progress.", ephemeral=True)
-    elif (ongoing[0][0] == 0) and (password == "never_share_this"):
+    elif (ongoing[0][0] == 0) and (password == passkey):
         async with sql.connect('main.db') as db:
             async with db.cursor() as cur:
                 await cur.execute("SELECT * FROM Ongoing;")
@@ -88,7 +97,7 @@ The submission deadline is {unix_time(date=datetime.datetime.now(), days=submiss
 <@&1222628620158369823>''')
         await interaction.response.send_message("Exchange has been initiated successfully!", ephemeral=True)
     else:
-        await interaction.response.send_message("Fuck off imposter!")
+        await interaction.response.send_message("Fuck off imposter!", ephemeral=True)
 
 
 @bot.tree.command(name='enter_exchange', description='Use this command to enter the album exchange!')
@@ -123,8 +132,14 @@ async def enter(interaction: discord.Interaction, artist: str, album: str, genre
                     "Please wait for an Exchange to be initiated by the moderators.", ephemeral=True)
 
 
-#@bot.tree.command(name='start_exchange', description='Use this to begin the exchange and assign albums.')
-#@app_commands.describe(password="Enter Password Here")
+@bot.tree.command(name='start_exchange', description='Use this to begin the exchange and assign albums.')
+@app_commands.describe(password="Enter Password Here")
+async def start(interaction: discord.Interaction, password: str):
+    if password == passkey:
+
+        await interaction.response.send_message("Exchange has started", ephemeral=True)
+    else:
+        await interaction.response.send_message("Fuck off imposter", ephemeral=True)
 
 
 @bot.tree.command(name='end_exchange', description='Ends the ongoing exchange.')
@@ -134,7 +149,7 @@ async def end(interaction: discord.Interaction, password: str, roles: discord.Ro
         async with db.cursor() as cur:
             await cur.execute("SELECT * FROM Ongoing;")
             ongoing = await cur.fetchall()
-            if password == "never_share_this":
+            if password == passkey:
                 if ongoing[0][0] == 1:
                     await cur.execute('UPDATE Ongoing SET Current_exchange=0, Title="NONE" where Current_exchange=1;')
                     await db.commit()
