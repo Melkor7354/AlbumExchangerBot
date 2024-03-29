@@ -31,6 +31,7 @@ def shuffle(data):
         album = random.choice(albums)
         while album == reference[member]:
             album = random.choice(albums)
+            albums.remove(album)
         shuffled.append((member, album))
     return shuffled
 
