@@ -49,12 +49,14 @@ def starting_messages(shuffled) -> list:
     if len(messages) == 0:
         return [message]
     else:
+        messages.append(message)
         return messages
+
 
 def unix_time(date: datetime.datetime, days: int, hours: int = 0, minutes: int = 0, seconds: int = 0) -> str:
     end_date = date + datetime.timedelta(days=days, hours=hours, minutes=minutes, seconds=seconds)
     date_tuple = (end_date.year, end_date.month, end_date.day, end_date.hour, end_date.minute, end_date.second)
-    return f'<t:{int(time.mktime(datetime.datetime(*date_tuple).timetuple()))}:R>'
+    return f'<t:{int(time.mktime(datetime.datetime(*date_tuple).timetuple()))}>'
 
 
 @bot.event
@@ -62,11 +64,13 @@ async def on_ready():
     print(bot.user)
     async with sql.connect('main.db') as db:
         async with db.cursor() as cur:
-            await cur.execute("CREATE TABLE IF NOT EXISTS Ongoing(Current_exchange int not null, Title varchar(100) not null, Accepting_Entries int not null);")
+            await cur.execute('''CREATE TABLE IF NOT EXISTS Ongoing(Current_exchange int not null, 
+            Title varchar(100) not null, Accepting_Entries int not null, Submission_period int not null, 
+            Exchange_period int not null);''')
             await cur.execute("SELECT * FROM Ongoing;")
             a = await cur.fetchall()
             if len(a) == 0:
-                await cur.execute("INSERT INTO Ongoing VALUES(0, 'NONE');")
+                await cur.execute("INSERT INTO Ongoing VALUES(0, 'NONE', 0, 0, 0);")
         await db.commit()
     try:
         synced = await bot.tree.sync()
@@ -85,14 +89,17 @@ async def on_message(message: discord.Message) -> None:
     channel = bot.get_channel(1223193607050362945)
     role = discord.utils.get(message.guild.roles, name="Album Exchanger")
     if message.channel.id == 1223193607050362945 and message.author != bot.user:
+        async with sql.connect('main.db') as db:
+            async with db.cursor() as cur:
+                await cur.execute("SELECT * FROM Ongoing;")
+                ongoing = await cur.fetchall()
+                await cur.execute(f'''UPDATE {ongoing[0][1]}_shuffled set reviewed=1 where 
+                member="{message.author.id}"''')
+                await db.commit()
         await channel.send(f"Thank you for submitting your review, {message.author}!")
         await message.author.remove_roles(role)
     else:
         pass
-
-
-
-
 
 
 @bot.tree.command(name='initiate_exchange', description='Use this command to begin the exchange.')
@@ -120,9 +127,12 @@ async def initiate(interaction: discord.Interaction, title: str, submission_peri
                 ongoing = await cur.fetchall()
                 try:
                     if len(ongoing) != 0:
-                        await cur.execute(f'''UPDATE Ongoing SET Current_exchange=1, Title='{title}', Accepting_Entries=1 where Current_exchange=0;''')
+                        await cur.execute(f'''UPDATE Ongoing SET Current_exchange=1, Title='{title}', 
+                        Accepting_Entries=1, Submission_period={submission_period}, Exchange_Period={exchange_period} 
+                        where Current_exchange=0;''')
                     else:
-                        await cur.execute(f'''INSERT INTO Ongoing VALUES(1, "{title}");''')
+                        await cur.execute(f'''INSERT INTO Ongoing VALUES(1, "{title}", 1, {submission_period}, 
+                        {exchange_period});''')
                     await cur.execute(f'''CREATE TABLE {title}(Member varchar(100) not null, 
                                                         Artist varchar(100) not null, 
                                                         Album varchar(100) not null, 
@@ -200,10 +210,16 @@ async def start(interaction: discord.Interaction, password: str):
                 ongoing = await cur.fetchall()
                 await cur.execute(f"SELECT * FROM {ongoing[0][1]}")
                 data = await cur.fetchall()
-                messages = starting_messages(shuffled=shuffle(data))
+                shuffled = shuffle(data)
+                await cur.execute(f'''CREATE TABLE {ongoing[0][1]}_shuffled(member varchar(100) not null, 
+                album varchar(100) not null, reviewed int not null);''')
+                await db.commit()
+                for i in shuffled:
+                    await cur.execute(f'''INSERT INTO {ongoing[0][1]}_shuffled VALUES("{i[0]}", "{i[1]}", 0);''')
+                await db.commit()
+                messages = starting_messages(shuffled=shuffled)
                 channel = bot.get_channel(1222594360630050857)
                 for message in messages:
-                    channel = bot.get_channel(1222594360630050857)
                     await channel.send(message)
         await interaction.response.send_message("Exchange has started", ephemeral=True)
     else:
@@ -212,7 +228,7 @@ async def start(interaction: discord.Interaction, password: str):
 
 @bot.tree.command(name='end_exchange', description='Ends the ongoing exchange.')
 @app_commands.describe(password='Enter password here.', roles="Enter role to ping.")
-async def end(interaction: discord.Interaction, password: str, roles: discord.Role):
+async def end(interaction: discord.Interaction, password: str, roles: discord.Role = None):
     async with sql.connect('main.db') as db:
         async with db.cursor() as cur:
             await cur.execute("SELECT * FROM Ongoing;")
@@ -223,10 +239,37 @@ async def end(interaction: discord.Interaction, password: str, roles: discord.Ro
                     await db.commit()
                     await interaction.response.send_message("Exchange ended successfully!", ephemeral=True)
                     channel = bot.get_channel(1222594360630050857)
+                    role = discord.utils.get(interaction.guild.roles, name='shitter')
+                    await cur.execute(f'''SELECT * FROM {ongoing[0][1]}_shuffled;''')
+                    data = await cur.fetchall()
+                    good = []
+                    shit = []
+                    for i in data:
+                        if i[2] == 1:
+                            good.append(int(i[0]))
+                        else:
+                            shit.append(int(i[0]))
+                    print(good)
+                    print(shit)
+                    messages = ['Gather around to look at the shitters from this round! \n']
+                    message = ''
+                    for shitter in shit:
+                        member = interaction.guild.get_member(shitter)
+                        print(member)
+                        await member.add_roles(role)
+                        part = f'<@{shitter}> \n'
+                        if len(message+part) <= 2000:
+                            message += part
+                        else:
+                            messages.append(message)
+                            message = ''
+                    messages.append(message)
+                    for message in messages:
+                        await channel.send(message)
                     try:
-                        await channel.send(f"The exchange has ended! {roles.mention}")
+                        await channel.send(f"The exchange has ended! Thank you for participating! \n{roles.mention}")
                     except Exception:
-                        await channel.send("The exchange has ended! <@&1222628620158369823>")
+                        await channel.send("The exchange has ended! Thank you for participating \n<@&1222628620158369823>")
 
                 else:
                     await interaction.response.send_message("No Exchange ongoing.", ephemeral=True)
