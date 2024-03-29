@@ -4,6 +4,7 @@ from discord import app_commands
 import aiosqlite as sql
 import datetime
 import time
+import random
 
 token = 'MTIyMjU0NDYzODU2NTY3OTE1NA.GORpSM.-lRqnDgpl3lukuNkivKB-1Mn_AV-LY2LhB6hgc'
 passkey = "hello"
@@ -13,8 +14,43 @@ print(datetime.datetime.utcnow())
 daily_announcement_time = datetime.time(hour=12, tzinfo=utc)
 
 
-def shuffle(members):
-    pass
+def shuffle(data):
+    def create_reference(data):
+        submissions = {}
+        member_list = []
+        album_list = []
+        for submission in data:
+            album = f"{submission[1]} - {submission[2]} ({submission[3]}, {submission[4]}, {submission[5]}) [{submission[6]}]"
+            submissions[submission[0]] = album
+            member_list.append(submission[0])
+            album_list.append(album)
+        return submissions, member_list, album_list
+    reference, members, albums = create_reference(data)
+    shuffled = []
+    for member in members:
+        album = random.choice(albums)
+        while album == reference[member]:
+            album = random.choice(albums)
+        shuffled.append((member, album))
+    return shuffled
+
+
+def starting_messages(shuffled):
+    messages = []
+    message = ''
+    for i in shuffled:
+        part = f"<@{i[0]}> - {i[1]} \n"
+        if len(message + part) <= 2000:
+            message = message + part
+        else:
+            message.append(messages)
+            message = ''
+    if len(messages) == 0:
+        return [message]
+    else:
+        return messages
+
+
 
 
 @tasks.loop(time=daily_announcement_time)  # scheduling task runs daily
@@ -33,7 +69,7 @@ async def on_ready():
     print(bot.user)
     async with sql.connect('main.db') as db:
         async with db.cursor() as cur:
-            await cur.execute("CREATE TABLE IF NOT EXISTS Ongoing(Current_exchange int not null, Title varchar(100) not null);")
+            await cur.execute("CREATE TABLE IF NOT EXISTS Ongoing(Current_exchange int not null, Title varchar(100) not null, Accepting_Entries int not null);")
             await cur.execute("SELECT * FROM Ongoing;")
             a = await cur.fetchall()
             if len(a) == 0:
@@ -71,7 +107,7 @@ async def initiate(interaction: discord.Interaction, title: str, submission_peri
                 ongoing = await cur.fetchall()
                 try:
                     if len(ongoing) != 0:
-                        await cur.execute(f'''UPDATE Ongoing SET Current_exchange=1, Title='{title}' where Current_exchange=0;''')
+                        await cur.execute(f'''UPDATE Ongoing SET Current_exchange=1, Title='{title}', Accepting_Entries=1 where Current_exchange=0;''')
                     else:
                         await cur.execute(f'''INSERT INTO Ongoing VALUES(1, "{title}");''')
                     await cur.execute(f'''CREATE TABLE {title}(Member varchar(100) not null, 
@@ -79,9 +115,11 @@ async def initiate(interaction: discord.Interaction, title: str, submission_peri
                                                         Album varchar(100) not null, 
                                                         Genre varchar(100) not null, 
                                                         Year int not null, 
-                                                        Country varchar(100) not null, rating varchar(100) not null);''')
+                                                        Country varchar(100) not null, Rating varchar(100) not null, 
+                                                        Id INTEGER primary key AUTOINCREMENT);''')
                     await db.commit()
-                except Exception:
+                except Exception as e:
+                    print(e)
                     await interaction.response.send_message("Exchange with that title already exists. Please try again",
                                                             ephemeral=True)
                     return
@@ -111,22 +149,29 @@ async def enter(interaction: discord.Interaction, artist: str, album: str, genre
             ongoing = await cur.fetchall()
             await db.commit()
             print(ongoing[0][0])
-            if ongoing[0][0] == 1:
+            if ongoing[0][0] == 1 and ongoing[0][2] == 1:
                 await cur.execute(f'''SELECT * FROM {ongoing[0][1]} where Member='{interaction.user.id}';''')
-                a = await cur.fetchall()
-                if len(a) == 0:
-                    await cur.execute(f'''INSERT INTO {ongoing[0][1]} VALUES("{interaction.user.id}", "{artist}", "{album}",
-                     "{genre}", {year}, "{country}", "{rating}");''')
-                    await db.commit()
-
-                    await interaction.response.send_message(
-                        f'''You successfully submitted the following entry \n "{artist} - {album} 
-                        ({genre}, {country}, {year}) [{rating}]".''', ephemeral=True)
-                    role = discord.utils.get(interaction.guild.roles, name="Album Exchanger")
-                    await interaction.user.add_roles(role)
+                check_member = await cur.fetchall()
+                if len(check_member) == 0:
+                    await cur.execute(f'''SELECT * FROM {ongoing[0][1]} where Artist="{artist}" and Album="{album}";''')
+                    check_album = await cur.fetchall()
+                    if len(check_album) == 0:
+                        await cur.execute(f'''INSERT INTO {ongoing[0][1]} (Member, Artist, Album, Genre, Year, Country, 
+                        Rating) VALUES("{interaction.user.id}", "{artist}", "{album}", "{genre}", {year}, "{country}", 
+                        "{rating}");''')
+                        await db.commit()
+                        await interaction.response.send_message(f'''You successfully submitted the following entry - 
+                        "{artist} - {album} ({genre}, {country}, {year}) [{rating}]".''', ephemeral=True)
+                        role = discord.utils.get(interaction.guild.roles, name="Album Exchanger")
+                        await interaction.user.add_roles(role)
+                    else:
+                        await interaction.response.send_message('''Someone has already submitted the same album. 
+                        Please try again with a different record.''', ephemeral=True)
                 else:
                     await interaction.response.send_message("You have already submitted one entry. Fuck off.",
                                                             ephemeral=True)
+            elif ongoing[0][0] == 1 and ongoing[0][2] == 0:
+                interaction.response.send_message("The submissions for the current exchange are closed. ")
             else:
                 await interaction.response.send_message(
                     "Please wait for an Exchange to be initiated by the moderators.", ephemeral=True)
@@ -136,7 +181,17 @@ async def enter(interaction: discord.Interaction, artist: str, album: str, genre
 @app_commands.describe(password="Enter Password Here")
 async def start(interaction: discord.Interaction, password: str):
     if password == passkey:
-
+        async with sql.connect('main.db') as db:
+            async with db.cursor() as cur:
+                await cur.execute("SELECT * FROM Ongoing;")
+                ongoing = await cur.fetchall()
+                await cur.execute(f"SELECT * FROM {ongoing[0][1]}")
+                data = await cur.fetchall()
+                messages = starting_messages(shuffled=shuffle(data))
+                channel = bot.get_channel(1222594360630050857)
+                for message in messages:
+                    channel = bot.get_channel(1222594360630050857)
+                    await channel.send(message)
         await interaction.response.send_message("Exchange has started", ephemeral=True)
     else:
         await interaction.response.send_message("Fuck off imposter", ephemeral=True)
