@@ -14,7 +14,7 @@ print(datetime.datetime.utcnow())
 daily_announcement_time = datetime.time(hour=12, tzinfo=utc)
 
 
-def shuffle(data):
+def shuffle(data) -> list:
     def create_reference(data):
         submissions = {}
         member_list = []
@@ -36,7 +36,7 @@ def shuffle(data):
     return shuffled
 
 
-def starting_messages(shuffled):
+def starting_messages(shuffled) -> list:
     messages = []
     message = ''
     for i in shuffled:
@@ -50,14 +50,6 @@ def starting_messages(shuffled):
         return [message]
     else:
         return messages
-
-
-
-
-@tasks.loop(time=daily_announcement_time)  # scheduling task runs daily
-async def daily_reminder():
-    pass
-
 
 def unix_time(date: datetime.datetime, days: int, hours: int = 0, minutes: int = 0, seconds: int = 0) -> str:
     end_date = date + datetime.timedelta(days=days, hours=hours, minutes=minutes, seconds=seconds)
@@ -81,6 +73,26 @@ async def on_ready():
         print('bot tree is synced')
     except Exception as e:
         print(e)
+
+
+@tasks.loop(time=daily_announcement_time)  # scheduling task runs daily
+async def daily_reminder():
+    pass
+
+
+@bot.event
+async def on_message(message: discord.Message) -> None:
+    channel = bot.get_channel(1223193607050362945)
+    role = discord.utils.get(message.guild.roles, name="Album Exchanger")
+    if message.channel.id == 1223193607050362945 and message.author != bot.user:
+        await channel.send(f"Thank you for submitting your review, {message.author}!")
+        await message.author.remove_roles(role)
+    else:
+        pass
+
+
+
+
 
 
 @bot.tree.command(name='initiate_exchange', description='Use this command to begin the exchange.')
