@@ -93,19 +93,23 @@ async def daily_reminder():
 
 @bot.event
 async def on_message(message: discord.Message) -> None:
-    channel = bot.get_channel(1223193607050362945)
-    role = discord.utils.get(message.guild.roles, name="Album Exchanger")
-    if message.channel.id == 1223193607050362945 and message.author != bot.user:
-        async with sql.connect('main.db') as db:
-            async with db.cursor() as cur:
-                await cur.execute("SELECT * FROM Ongoing;")
-                ongoing = await cur.fetchall()
-                await cur.execute(f'''UPDATE {ongoing[0][1]}_shuffled set reviewed=1 where 
-                member="{message.author.id}"''')
-                await db.commit()
-        await channel.send(f"Thank you for submitting your review, {message.author}!")
-        await message.author.remove_roles(role)
-    else:
+
+    try:
+        channel = bot.get_channel(1223193607050362945)
+        role = discord.utils.get(message.guild.roles, name="Album Exchanger")
+        if message.channel.id == 1223193607050362945 and message.author != bot.user:
+            async with sql.connect('main.db') as db:
+                async with db.cursor() as cur:
+                    await cur.execute("SELECT * FROM Ongoing;")
+                    ongoing = await cur.fetchall()
+                    await cur.execute(f'''UPDATE {ongoing[0][1]}_shuffled set reviewed=1 where 
+                    member="{message.author.id}"''')
+                    await db.commit()
+            await channel.send(f"Thank you for submitting your review, {message.author}!")
+            await message.author.remove_roles(role)
+        else:
+            pass
+    except Exception:
         pass
 
 
@@ -157,14 +161,16 @@ async def initiate(interaction: discord.Interaction, title: str, submission_peri
         channel = bot.get_channel(1222594360630050857)
         try:
             await channel.send(f'''# Submissions are now open! \n \n 
-            ## You have until {unix_time(date=datetime.datetime.now(), days=submission_period)}\n
-            ## The albums will be handed out on {unix_time(date=datetime.datetime.now(), days=submission_period)}
-            ## After you receive your album, you have until {unix_time(date=datetime.datetime.now(), days=submission_period+exchange_period)} to send in your feedback.
+            ### You have until {unix_time(date=datetime.datetime.now(), days=submission_period)}\n
+            ### The albums will be handed out on {unix_time(date=datetime.datetime.now(), days=submission_period)}
+            ### After you receive your album, you have until {unix_time(date=datetime.datetime.now(), days=submission_period+exchange_period)} to send in your feedback.
             {roles.mention}.''')
         except Exception:
-            await channel.send(f'''The exchange has begun! You can start submitting your entries now! 
-The submission deadline is {unix_time(date=datetime.datetime.now(), days=submission_period)}
-<@&1222628620158369823>''')
+            await channel.send(f'''# Submissions are now open! \n \n 
+            ### You have until {unix_time(date=datetime.datetime.now(), days=submission_period)}\n
+            ### The albums will be handed out on {unix_time(date=datetime.datetime.now(), days=submission_period)}
+            ### After you receive your album, you have until {unix_time(date=datetime.datetime.now(), days=submission_period+exchange_period)} to send in your feedback. 
+            <@&1222628620158369823>''')
         await interaction.response.send_message("Exchange has been initiated successfully!", ephemeral=True)
     else:
         await interaction.response.send_message("Fuck off imposter!", ephemeral=True)
@@ -289,7 +295,7 @@ async def end(interaction: discord.Interaction, password: str, roles: discord.Ro
 
 @bot.tree.command(name='review_entries', description='View the current entries and review them')
 @app_commands.describe(password='Enter Password')
-async def test(interaction: discord.Interaction, password: str):
+async def review(interaction: discord.Interaction, password: str):
     if password == passkey:
         async with sql.connect('main.db') as db:
             async with db.cursor() as cur:
@@ -318,8 +324,34 @@ async def test(interaction: discord.Interaction, password: str):
         await interaction.response.send_message("Password Invalid", ethereal=True)
 
 
+@bot.tree.command(name="remove_entries", description="Remove Entries after review")
+@app_commands.describe(password="Enter Password", indexes="Enter the index of the entry/ies to be removed. For example, to remove entries 1 and 3, enter 1,3 ")
+async def remove(interaction: discord.Interaction, password: str, indexes: str):
+    if password == passkey:
+        indices = indexes.replace(" ", "").split(",")
+        to_delete = []
+        try:
+            for i in indices:
+                to_delete.append(int(i))
+        except ValueError:
+            interaction.response.send_message(
+                "Please enter the required indexes correctly. Ensure that they are valid integers.", ethereal=True)
+            return
+        try:
+            async with sql.connect('main.db') as db:
+                async with db.cursor() as cur:
+                    await cur.execute("SELECT * FROM Ongoing;")
+                    ongoing = await cur.fetchall()
+                    for i in indices:
+                        await cur.execute(f"DELETE FROM {ongoing[0][1]} WHERE Id={i};")
+                    await db.commit()
+            await interaction.response.send_message("Entries removed successfully.")
+        except Exception as e:
+            print(e)
+            await interaction.response.send_message("Problem with the indices. Please try again.", ethereal=True)
 
-
+    else:
+        interaction.response.send_message("Invalid Password")
 
 
 bot.run(token)
