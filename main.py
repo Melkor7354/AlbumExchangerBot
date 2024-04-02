@@ -9,9 +9,15 @@ import random
 token = 'MTIyMjU0NDYzODU2NTY3OTE1NA.GORpSM.-lRqnDgpl3lukuNkivKB-1Mn_AV-LY2LhB6hgc'
 passkey = "hello"
 utc = datetime.timezone.utc
-bot = commands.Bot(command_prefix='<>', intents=discord.Intents.all())
+bot = commands.Bot(command_prefix='?', intents=discord.Intents.all())
 print(datetime.datetime.utcnow())
 daily_announcement_time = datetime.time(hour=12, tzinfo=utc)
+
+
+@bot.command()
+async def text(ctx, arg):
+    await ctx.channel.send(arg)
+    print(arg)
 
 
 def shuffle(data) -> list:
@@ -75,6 +81,7 @@ async def on_ready():
     try:
         synced = await bot.tree.sync()
         print('bot tree is synced')
+        sync = await bot.command()
     except Exception as e:
         print(e)
 
@@ -149,8 +156,10 @@ async def initiate(interaction: discord.Interaction, title: str, submission_peri
 
         channel = bot.get_channel(1222594360630050857)
         try:
-            await channel.send(f'''The exchange has begun! You can start submitting your entries now! \n 
-            The submission deadline is {unix_time(date=datetime.datetime.now(), days=submission_period)}\n
+            await channel.send(f'''# Submissions are now open! \n \n 
+            ## You have until {unix_time(date=datetime.datetime.now(), days=submission_period)}\n
+            ## The albums will be handed out on {unix_time(date=datetime.datetime.now(), days=submission_period)}
+            ## After you receive your album, you have until {unix_time(date=datetime.datetime.now(), days=submission_period+exchange_period)} to send in your feedback.
             {roles.mention}.''')
         except Exception:
             await channel.send(f'''The exchange has begun! You can start submitting your entries now! 
@@ -183,8 +192,7 @@ async def enter(interaction: discord.Interaction, artist: str, album: str, genre
                         Rating) VALUES("{interaction.user.id}", "{artist}", "{album}", "{genre}", {year}, "{country}", 
                         "{rating}");''')
                         await db.commit()
-                        await interaction.response.send_message(f'''You successfully submitted the following entry - 
-                        "{artist} - {album} ({genre}, {country}, {year}) [{rating}]".''', ephemeral=True)
+                        await interaction.response.send_message(f'''You successfully submitted the following entry - \n "{artist} - {album} ({genre}, {country}, {year}) [{rating}]".''', ephemeral=True)
                         role = discord.utils.get(interaction.guild.roles, name="Album Exchanger")
                         await interaction.user.add_roles(role)
                     else:
@@ -216,9 +224,11 @@ async def start(interaction: discord.Interaction, password: str):
                 await db.commit()
                 for i in shuffled:
                     await cur.execute(f'''INSERT INTO {ongoing[0][1]}_shuffled VALUES("{i[0]}", "{i[1]}", 0);''')
+                await cur.execute(f'UPDATE Ongoing set Accepting_Entries=0 where Current_Exchange=1;')
                 await db.commit()
                 messages = starting_messages(shuffled=shuffled)
                 channel = bot.get_channel(1222594360630050857)
+                await channel.send(f"# Exchange has begun! \n\n Be ready with your feedback by {unix_time(date=datetime.datetime.now(), days=ongoing[0][4])}")
                 for message in messages:
                     await channel.send(message)
         await interaction.response.send_message("Exchange has started", ephemeral=True)
@@ -275,6 +285,41 @@ async def end(interaction: discord.Interaction, password: str, roles: discord.Ro
                     await interaction.response.send_message("No Exchange ongoing.", ephemeral=True)
             else:
                 await interaction.response.send_message('Fuck off imposter', ephemeral=True)
+
+
+@bot.tree.command(name='review_entries', description='View the current entries and review them')
+@app_commands.describe(password='Enter Password')
+async def test(interaction: discord.Interaction, password: str):
+    if password == passkey:
+        async with sql.connect('main.db') as db:
+            async with db.cursor() as cur:
+                await cur.execute("SELECT * FROM Ongoing;")
+                ongoing = await cur.fetchall()
+                await cur.execute(f"SELECT * FROM {ongoing[0][1]}")
+                data = await cur.fetchall()
+                messages = []
+                message = ''
+                for i in data:
+                    part = f"{i[7]} -- <@{i[0]}> : {i[1]} - {i[2]} ({i[3]}, {i[4]}, {i[5]}) [{i[6]}] \n"
+                    if len(message + part) <= 2000:
+                        message = message + part
+                    else:
+                        message.append(messages)
+                        message = ''
+                if len(messages) == 0:
+                    messages = [message]
+                else:
+                    messages.append(message)
+                embed = discord.Embed(title="Current Submissions", description="Here is a list of current submissions within this exchange", color=0x00ff00)
+                for message in messages:
+                    embed.add_field(name='\n', value=message, inline=False)
+                await interaction.response.send_message(embed=embed)
+    else:
+        await interaction.response.send_message("Password Invalid", ethereal=True)
+
+
+
+
 
 
 bot.run(token)
