@@ -14,18 +14,12 @@ print(datetime.datetime.utcnow())
 daily_announcement_time = datetime.time(hour=12, tzinfo=utc)
 
 
-@bot.command()
-async def text(ctx, arg):
-    await ctx.channel.send(arg)
-    print(arg)
-
-
 def shuffle(data) -> list:
-    def create_reference(data):
+    def create_reference(dat):
         submissions = {}
         member_list = []
         album_list = []
-        for submission in data:
+        for submission in dat:
             album = f"{submission[1]} - {submission[2]} ({submission[3]}, {submission[4]}, {submission[5]}) [{submission[6]}]"
             submissions[submission[0]] = album
             member_list.append(submission[0])
@@ -73,6 +67,7 @@ async def on_ready():
             await cur.execute('''CREATE TABLE IF NOT EXISTS Ongoing(Current_exchange int not null, 
             Title varchar(100) not null, Accepting_Entries int not null, Submission_period int not null, 
             Exchange_period int not null);''')
+            await cur.execute('''CREATE TABLE IF NOT EXISTS Shitters(Member varchar(20) not null);''')
             await cur.execute("SELECT * FROM Ongoing;")
             a = await cur.fetchall()
             if len(a) == 0:
@@ -81,14 +76,8 @@ async def on_ready():
     try:
         synced = await bot.tree.sync()
         print('bot tree is synced')
-        sync = await bot.command()
     except Exception as e:
         print(e)
-
-
-@tasks.loop(time=daily_announcement_time)  # scheduling task runs daily
-async def daily_reminder():
-    pass
 
 
 @bot.event
@@ -123,7 +112,7 @@ async def on_message(message: discord.Message) -> None:
                        password="Enter passkey here",
                        roles="Roles to Tag")
 async def initiate(interaction: discord.Interaction, title: str, submission_period: int, exchange_period: int,
-                   password: str, message: str = None, theme: str = None, roles: discord.Role = None):
+                   password: str, message: str = None, theme: str = None, roles: discord.Role = None) -> None:
     async with sql.connect('main.db') as db:
         async with db.cursor() as cur:
             await cur.execute("SELECT * FROM Ongoing;")
@@ -160,7 +149,9 @@ async def initiate(interaction: discord.Interaction, title: str, submission_peri
 
         channel = bot.get_channel(1222594360630050857)
         try:
-            await channel.send(f'''# Submissions are now open! \n \n 
+            await channel.send(f'''# __Submissions are now open!__ \n \n 
+            ## The custom theme is __{theme}__
+            ## Special Message from the mod - __{message}__
             ### You have until {unix_time(date=datetime.datetime.now(), days=submission_period)}\n
             ### The albums will be handed out on {unix_time(date=datetime.datetime.now(), days=submission_period)}
             ### After you receive your album, you have until {unix_time(date=datetime.datetime.now(), days=submission_period+exchange_period)} to send in your feedback.
@@ -180,7 +171,7 @@ async def initiate(interaction: discord.Interaction, title: str, submission_peri
 @app_commands.describe(artist='Artist/Band Name', album='Name of the Record', genre='Genre', year='Year of release',
                        country='Country', rating='Your rating of the album')
 async def enter(interaction: discord.Interaction, artist: str, album: str, genre: str, year: int, country: str,
-                rating: str):
+                rating: str) -> None:
     async with sql.connect('main.db') as db:
         async with db.cursor() as cur:
             await cur.execute("SELECT * FROM Ongoing;")
@@ -216,7 +207,7 @@ async def enter(interaction: discord.Interaction, artist: str, album: str, genre
 
 @bot.tree.command(name='start_exchange', description='Use this to begin the exchange and assign albums.')
 @app_commands.describe(password="Enter Password Here")
-async def start(interaction: discord.Interaction, password: str):
+async def start(interaction: discord.Interaction, password: str) -> None:
     if password == passkey:
         async with sql.connect('main.db') as db:
             async with db.cursor() as cur:
@@ -231,10 +222,21 @@ async def start(interaction: discord.Interaction, password: str):
                 for i in shuffled:
                     await cur.execute(f'''INSERT INTO {ongoing[0][1]}_shuffled VALUES("{i[0]}", "{i[1]}", 0);''')
                 await cur.execute(f'UPDATE Ongoing set Accepting_Entries=0 where Current_Exchange=1;')
+                role = discord.utils.get(interaction.guild.roles, name='shitter')
+                await cur.execute("SELECT * FROM Shitters;")
+                shitters = await cur.fetchall()
+                if len(shitters) == 0:
+                    pass
+                else:
+                    for shitter in shitters:
+                        member_id = int(shitter[0])
+                        member = interaction.guild.get_member(shitter)
+                        await member.remove_roles(role)
+                await cur.execute("DELETE FROM Shitters;")
                 await db.commit()
                 messages = starting_messages(shuffled=shuffled)
                 channel = bot.get_channel(1222594360630050857)
-                await channel.send(f"# Exchange has begun! \n\n Be ready with your feedback by {unix_time(date=datetime.datetime.now(), days=ongoing[0][4])}")
+                await channel.send(f"# __Exchange has begun!__ \n\n ### Be ready with your feedback by {unix_time(date=datetime.datetime.now(), days=ongoing[0][4])}")
                 for message in messages:
                     await channel.send(message)
         await interaction.response.send_message("Exchange has started", ephemeral=True)
@@ -244,7 +246,7 @@ async def start(interaction: discord.Interaction, password: str):
 
 @bot.tree.command(name='end_exchange', description='Ends the ongoing exchange.')
 @app_commands.describe(password='Enter password here.', roles="Enter role to ping.")
-async def end(interaction: discord.Interaction, password: str, roles: discord.Role = None):
+async def end(interaction: discord.Interaction, password: str, roles: discord.Role = None) -> None:
     async with sql.connect('main.db') as db:
         async with db.cursor() as cur:
             await cur.execute("SELECT * FROM Ongoing;")
@@ -256,6 +258,7 @@ async def end(interaction: discord.Interaction, password: str, roles: discord.Ro
                     await interaction.response.send_message("Exchange ended successfully!", ephemeral=True)
                     channel = bot.get_channel(1222594360630050857)
                     role = discord.utils.get(interaction.guild.roles, name='shitter')
+                    role2 = discord.utils.get(interaction.guild.roles, name="Album Exchanger")
                     await cur.execute(f'''SELECT * FROM {ongoing[0][1]}_shuffled;''')
                     data = await cur.fetchall()
                     good = []
@@ -267,12 +270,19 @@ async def end(interaction: discord.Interaction, password: str, roles: discord.Ro
                             shit.append(int(i[0]))
                     print(good)
                     print(shit)
-                    messages = ['Gather around to look at the shitters from this round! \n']
+                    if len(shit) > 0:
+                        for i in shit:
+                            await cur.execute(f"INSERT INTO Shitters Values('{i}');")
+                        await db.commit()
+                    else:
+                        pass
+                    messages = ['# __Gather around to look at the shitters from this round!__ \n']
                     message = ''
                     for shitter in shit:
                         member = interaction.guild.get_member(shitter)
                         print(member)
                         await member.add_roles(role)
+                        await member.remove_roles(role2)
                         part = f'<@{shitter}> \n'
                         if len(message+part) <= 2000:
                             message += part
@@ -295,7 +305,7 @@ async def end(interaction: discord.Interaction, password: str, roles: discord.Ro
 
 @bot.tree.command(name='review_entries', description='View the current entries and review them')
 @app_commands.describe(password='Enter Password')
-async def review(interaction: discord.Interaction, password: str):
+async def review(interaction: discord.Interaction, password: str) -> None:
     if password == passkey:
         async with sql.connect('main.db') as db:
             async with db.cursor() as cur:
@@ -321,12 +331,12 @@ async def review(interaction: discord.Interaction, password: str):
                     embed.add_field(name='\n', value=message, inline=False)
                 await interaction.response.send_message(embed=embed)
     else:
-        await interaction.response.send_message("Password Invalid", ethereal=True)
+        await interaction.response.send_message("Password Invalid", ephemeral=True)
 
 
 @bot.tree.command(name="remove_entries", description="Remove Entries after review")
-@app_commands.describe(password="Enter Password", indexes="Enter the index of the entry/ies to be removed. For example, to remove entries 1 and 3, enter 1,3 ")
-async def remove(interaction: discord.Interaction, password: str, indexes: str):
+@app_commands.describe(password="Enter Password", indexes="Enter the index of the entry/ies to be removed. For example, to remove entries 1 and 3, enter 1,3 ", warn="Warn the users?")
+async def remove(interaction: discord.Interaction, password: str, indexes: str, warn: bool = False) -> None:
     if password == passkey:
         indices = indexes.replace(" ", "").split(",")
         to_delete = []
@@ -335,23 +345,70 @@ async def remove(interaction: discord.Interaction, password: str, indexes: str):
                 to_delete.append(int(i))
         except ValueError:
             interaction.response.send_message(
-                "Please enter the required indexes correctly. Ensure that they are valid integers.", ethereal=True)
+                "Please enter the required indexes correctly. Ensure that they are valid integers.", ephemeral=True)
             return
         try:
             async with sql.connect('main.db') as db:
                 async with db.cursor() as cur:
                     await cur.execute("SELECT * FROM Ongoing;")
                     ongoing = await cur.fetchall()
+                    deleted = []
                     for i in indices:
+                        await cur.execute(f"SELECT * FROM {ongoing[0][1]} WHERE Id={i};")
+                        data = await cur.fetchall()
+                        deleted.append(data)
                         await cur.execute(f"DELETE FROM {ongoing[0][1]} WHERE Id={i};")
                     await db.commit()
-            await interaction.response.send_message("Entries removed successfully.")
+                    if warn:
+                        channel = bot.get_channel(1222594360630050857)
+                        message = '''The following user(s) have been warned for submitting an album that violates the rules of the exchange. Do not submit such an album again. - \n\n '''
+                        for i in deleted:
+                            message += f"<@{i[0][0]}> \n"
+                        await channel.send(message)
+                    else:
+                        pass
+            await interaction.response.send_message("Entries removed successfully.", ephemeral=True)
         except Exception as e:
             print(e)
-            await interaction.response.send_message("Problem with the indices. Please try again.", ethereal=True)
+            await interaction.response.send_message("Problem with the indices. Please try again.", ephemeral=True)
 
     else:
-        interaction.response.send_message("Invalid Password")
+        interaction.response.send_message("Invalid Password", ephemeral=True)
+
+
+@bot.tree.command(name="Reminder", description="Send a reminder to all of those who have not submitted their reviews.")
+@app_commands.describe(password="Enter Password")
+async def remind(interaction: discord.Interaction, password: str) -> None:
+    if password == passkey:
+        channel = bot.get_channel(1222594360630050857)
+        async with sql.connect('main.db') as db:
+            async with db.cursor() as cur:
+                await cur.execute("SELECT * FROM Ongoing;")
+                ongoing = await cur.fetchall()
+                await cur.execute(f'''SELECT * FROM {ongoing[0][1]}_shuffled;''')
+                data = await cur.fetchall()
+                reminder = []
+                for i in data:
+                    if i[2] == 0:
+                        reminder.append(int(i[0]))
+                    else:
+                        pass
+                messages = ['''# The following users have still not submitted their album reviews. 
+                Please make sure to complete your review before the deadline.''']
+                message = ''
+                for i in reminder:
+                    part = f'<@{i}> \n'
+                    if len(message + part) <= 2000:
+                        message += part
+                    else:
+                        messages.append(message)
+                        message = ''
+                messages.append(message)
+                for message in messages:
+                    await channel.send(message)
+        interaction.response.send_message("The reminder was successful.", ephemeral="True")
+    else:
+        interaction.response.send_message("Password Invalid.")
 
 
 bot.run(token)
