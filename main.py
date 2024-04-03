@@ -5,7 +5,7 @@ import aiosqlite as sql
 import datetime
 import time
 import random
-from keep_alive import keep_alive
+
 
 token = 'MTIyMjU0NDYzODU2NTY3OTE1NA.GORpSM.-lRqnDgpl3lukuNkivKB-1Mn_AV-LY2LhB6hgc'
 passkey = "hello"
@@ -13,7 +13,7 @@ utc = datetime.timezone.utc
 bot = commands.Bot(command_prefix='?', intents=discord.Intents.all())
 print(datetime.datetime.utcnow())
 daily_announcement_time = datetime.time(hour=12, tzinfo=utc)
-keep_alive()
+
 
 def shuffle(data) -> list:
     def create_reference(dat):
