@@ -2,7 +2,7 @@ import requests
 import time
 
 # Replace 'YOUR_BOT_URL_HERE' with the actual URL of your bot
-BOT_URL = 'YOUR_BOT_URL_HERE'
+BOT_URL = 'https://albumexchangerbot.onrender.com'
 
 
 def keep_alive():
