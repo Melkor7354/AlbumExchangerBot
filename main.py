@@ -5,6 +5,7 @@ import aiosqlite as sql
 import datetime
 import time
 import random
+from keep_alive import keep_alive
 
 token = 'MTIyMjU0NDYzODU2NTY3OTE1NA.GORpSM.-lRqnDgpl3lukuNkivKB-1Mn_AV-LY2LhB6hgc'
 passkey = "hello"
@@ -12,7 +13,7 @@ utc = datetime.timezone.utc
 bot = commands.Bot(command_prefix='?', intents=discord.Intents.all())
 print(datetime.datetime.utcnow())
 daily_announcement_time = datetime.time(hour=12, tzinfo=utc)
-
+keep_alive()
 
 def shuffle(data) -> list:
     def create_reference(dat):
@@ -27,10 +28,15 @@ def shuffle(data) -> list:
         return submissions, member_list, album_list
     reference, members, albums = create_reference(data)
     shuffled = []
-    for member in members:
+    def get(reference, member, albums):
         album = random.choice(albums)
-        while album == reference[member]:
-            album = random.choice(albums)
+        if album == reference[member]:
+            get(reference=reference, member=member, albums=albums)
+        else:
+            return album
+
+    for member in members:
+        album = get(reference=reference, member=member, albums=albums)
         shuffled.append((member, album))
         albums.remove(album)
     return shuffled
@@ -171,7 +177,7 @@ async def initiate(interaction: discord.Interaction, title: str, submission_peri
 @app_commands.describe(artist='Artist/Band Name', album='Name of the Record', genre='Genre', year='Year of release',
                        country='Country', rating='Your rating of the album')
 async def enter(interaction: discord.Interaction, artist: str, album: str, genre: str, year: int, country: str,
-                rating: str) -> None:
+                rating: str = "__" ) -> None:
     async with sql.connect('main.db') as db:
         async with db.cursor() as cur:
             await cur.execute("SELECT * FROM Ongoing;")
@@ -203,6 +209,31 @@ async def enter(interaction: discord.Interaction, artist: str, album: str, genre
             else:
                 await interaction.response.send_message(
                     "Please wait for an Exchange to be initiated by the moderators.", ephemeral=True)
+
+
+@bot.tree.command(name="change_entry", description="Change your entry.")
+@app_commands.describe(artist='Artist/Band Name', album='Name of the Record', genre='Genre', year='Year of release',
+                       country='Country', rating='Your rating of the album')
+async def change(interaction: discord.Interaction, artist: str, album: str, genre: str, year: int, country: str,
+                rating: str = "__" ) -> None:
+    async with sql.connect('main.db') as db:
+        async with db.cursor() as cur:
+            await cur.execute("SELECT * FROM Ongoing;")
+            ongoing = await cur.fetchall()
+            await db.commit()
+            print(ongoing[0][0])
+            if ongoing[0][0] == 1 and ongoing[0][2] == 1:
+                await cur.execute(f'''SELECT * FROM {ongoing[0][1]} where Member='{interaction.user.id}';''')
+                check_member = await cur.fetchall()
+                if len(check_member) == 0:
+                    await interaction.response.send_message("Your entry has either been removed by mods or doesn't exist.", ephemeral=True)
+                else:
+                    await cur.execute(f'''UPDATE {ongoing[0][1]} SET Artist={artist}, Album={album}, Genre={genre},
+                     Year={year}, Country={country}, rating={rating} WHERE Id={interaction.user.id};''')
+                    await db.commit()
+                    await interaction.response.send_message("Entry changed successfully!", ephemeral=True)
+            else:
+                await interaction.response.send_message("Please wait for exchange to be initiated by mods.", ephemeral=True)
 
 
 @bot.tree.command(name='start_exchange', description='Use this to begin the exchange and assign albums.')
@@ -376,7 +407,7 @@ async def remove(interaction: discord.Interaction, password: str, indexes: str, 
         interaction.response.send_message("Invalid Password", ephemeral=True)
 
 
-@bot.tree.command(name="Reminder", description="Send a reminder to all of those who have not submitted their reviews.")
+@bot.tree.command(name="reminder", description="Send a reminder to all of those who have not submitted their reviews.")
 @app_commands.describe(password="Enter Password")
 async def remind(interaction: discord.Interaction, password: str) -> None:
     if password == passkey:
