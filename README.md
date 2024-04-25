@@ -4,7 +4,7 @@ The Exchanger bot has been created for the purpose of automating the weekly albu
 The bot uses SQLite as a database and uses the standard Discord.py library to create the bot.
 
 # Main Functions
-### Shuffle
+## Shuffle
 ```python
 def shuffle(data) -> list:
     def create_reference(dat):
