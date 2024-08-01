@@ -5,10 +5,6 @@ import aiosqlite as sql
 import datetime
 import time
 import random
-
-
-token = 'MTIyMjU0NDYzODU2NTY3OTE1NA.GORpSM.-lRqnDgpl3lukuNkivKB-1Mn_AV-LY2LhB6hgc'
-passkey = "hello"
 utc = datetime.timezone.utc
 bot = commands.Bot(command_prefix='?', intents=discord.Intents.all())
 print(datetime.datetime.utcnow())
